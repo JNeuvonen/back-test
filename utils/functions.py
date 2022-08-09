@@ -6,6 +6,77 @@ from datetime import datetime
 import utils.constants as C
 
 
+def handle_crypto_price_moves(data):
+
+    cols = []
+    for col in C.CRYPTO_SYMBOLS:
+        for type_of_sma in C.CRYPTO_SMA_TYPES:
+            abs_move = data[col +
+                            type_of_sma] - data[col + type_of_sma].shift()
+            rel_move = data[col +
+                            type_of_sma] / data[col + type_of_sma].shift()
+
+            data[col + '_ABS_MOVE' + type_of_sma] = abs_move
+            data[col + '_REL_MOVE' + type_of_sma] = rel_move
+            cols.append(col + '_ABS_MOVE' + type_of_sma)
+
+    return cols
+
+
+def handle_crypto_rsi(data):
+
+    cols = []
+    for roll_avg in C.SMA_ROLLING_AVERAGES:
+        for col in C.CRYPTO_SYMBOLS:
+            for type_of_sma in C.CRYPTO_SMA_TYPES:
+                delta = data[col + type_of_sma].diff()
+                up = delta.clip(lower=0)
+                down = -1*delta.clip(upper=0)
+                ema_up = up.ewm(com=roll_avg, adjust=False).mean()
+                ema_down = down.ewm(com=roll_avg, adjust=False).mean()
+                rs = ema_up/ema_down
+                data[col + f'_RSI{roll_avg}' +
+                     type_of_sma] = 100 - (100/(1+rs))
+                cols.append(col + f'_RSI{roll_avg}' +
+                            type_of_sma)
+    return cols
+
+
+def handle_rsi(data, rsi_len, symbols, types):
+    cols = []
+    for days in rsi_len:
+        for symbol in symbols:
+            for type_of_rsi in types:
+                delta = data[symbol + type_of_rsi].diff()
+                up = delta.clip(lower=0)
+                down = -1*delta.clip(upper=0)
+                ema_up = up.ewm(com=days, adjust=False).mean()
+                ema_down = down.ewm(com=days, adjust=False).mean()
+                rs = ema_up/ema_down
+                data[symbol + f'_RSI{days}' +
+                     type_of_rsi] = 100 - (100/(1+rs))
+                cols.append(symbol + f'_RSI{days}' +
+                            type_of_rsi)
+    return cols
+
+
+def handle_gn_rsi(data, rsi_len, types):
+    cols = []
+    for days in rsi_len:
+        for type_of_rsi in types:
+            delta = data[type_of_rsi].diff()
+            up = delta.clip(lower=0)
+            down = -1*delta.clip(upper=0)
+            ema_up = up.ewm(com=days, adjust=False).mean()
+            ema_down = down.ewm(com=days, adjust=False).mean()
+            rs = ema_up/ema_down
+            data[f'RSI{days}_' +
+                 type_of_rsi] = 100 - (100/(1+rs))
+            cols.append(f'RSI{days}_' +
+                        type_of_rsi)
+    return cols
+
+
 def read_crypto_dir(path, ticker):
 
     shift_col = ['High', 'Low', 'Volume', 'Quote asset volume',
@@ -149,11 +220,62 @@ def clean_column_names(df):
     df.columns = df.columns.str.replace('SUPPLY', 'SUPPL')
 
 
+def handle_gn_sma_cals(data, sma_len, types):
+    cols = []
+
+    for days in sma_len:
+        for sma_type in types:
+            mean = data[sma_type].rolling(days).mean()
+            data[sma_type + '_DIV_' +
+                 f'SMA{days}' + sma_type] = data[sma_type] / mean
+
+            cols.append(sma_type + '_DIV_' +
+                        f'SMA{days}' + sma_type)
+
+    return cols
+
+
+def handle_gn_max_calcs(data, max_len, types):
+    cols = []
+
+    for days in max_len:
+        for type_of_max in types:
+            max = data[type_of_max].rolling(days).max()
+
+            data[type_of_max + '_DIV_' + f'MAX{days}_' +
+                 type_of_max] = data[type_of_max] / data[f'MAX{days}_' + type_of_max]
+
+            cols.append(type_of_max + '_DIV_' + f'MAX{days}_' +
+                        type_of_max)
+
+    return cols
+
+
+def handle_sma_calcs(data, sma_len, symbols, types):
+    cols = []
+
+    for days in sma_len:
+        for symbol in symbols:
+            for sma_type in types:
+
+                mean = data[symbol +
+                            sma_type].rolling(days).mean()
+
+                data[symbol + f'_SMA{days}' + sma_type] = mean
+                data[symbol + sma_type + '_DIV_' + symbol +
+                     f'_SMA{days}' + sma_type] = data[symbol + sma_type] / mean
+                cols.append(symbol + f'_SMA{days}' + sma_type)
+
+                cols.append(symbol + sma_type + '_DIV_' + symbol +
+                            f'_SMA{days}' + sma_type)
+    return cols
+
+
 def handle_crypto_sma_calcs(data):
     cols = []
 
     for roll_avg in C.SMA_ROLLING_AVERAGES:
-        for col in C.SYMBOLS:
+        for col in C.CRYPTO_SYMBOLS:
             for type_of_sma in C.CRYPTO_SMA_TYPES:
                 data[col + f'_SMA{roll_avg}' + type_of_sma] = data[col +
                                                                    type_of_sma].rolling(roll_avg).mean()
@@ -166,28 +288,28 @@ def handle_crypto_sma_calcs(data):
     return cols
 
 
-def handle_crypto_max_calcs(data):
+def handle_max_calcs(data, max_len, symbols, types):
     cols = []
 
-    for days in C.HIGH_OF_N_DAYS:
-        for col in C.SYMBOLS:
-            for type_of_high in C.CRYPTO_HIGH_TYPES:
-                data[col + f'_MAX{days}' + type_of_high] = data[col +
-                                                                type_of_high].rolling(days).max()
+    for days in max_len:
+        for symbol in symbols:
+            for type_of_max in types:
+                data[symbol + f'_MAX{days}' + type_of_max] = data[symbol +
+                                                                  type_of_max].rolling(days).max()
 
-                data[col + type_of_high + '_DIV_' + col + f'_MAX{days}' +
-                     type_of_high] = data[col + type_of_high] / data[col + f'_MAX{days}' + type_of_high]
+                data[symbol + type_of_max + '_DIV_' + symbol + f'_MAX{days}' +
+                     type_of_max] = data[symbol + type_of_max] / data[symbol + f'_MAX{days}' + type_of_max]
 
-                cols.append(col + f'_MAX{days}' + type_of_high)
-                cols.append(col + type_of_high + '_DIV_' + col + f'_MAX{days}' +
-                            type_of_high)
+                cols.append(symbol + f'_MAX{days}' + type_of_max)
+                cols.append(symbol + type_of_max + '_DIV_' + symbol + f'_MAX{days}' +
+                            type_of_max)
     return cols
 
 
 def handle_crypto_low_calcs(data):
     cols = []
     for days in C.HIGH_OF_N_DAYS:
-        for col in C.SYMBOLS:
+        for col in C.CRYPTO_SYMBOLS:
             for type_of_high in C.CRYPTO_HIGH_TYPES:
                 data[col + f'_MIN{days}' + type_of_high] = data[col +
                                                                 type_of_high].rolling(days).min()
@@ -197,5 +319,40 @@ def handle_crypto_low_calcs(data):
                 cols.append(col + f'_MIN{days}' + type_of_high)
                 cols.append(col + type_of_high + '_DIV_' + col + f'_MIN{days}' +
                             type_of_high)
+
+    return cols
+
+
+def handle_low_calcs(data, low_len, symbols, types):
+    cols = []
+    for days in low_len:
+        for symbol in symbols:
+            for type_of_low in types:
+                data[symbol + f'_MIN{days}' + type_of_low] = data[symbol +
+                                                                  type_of_low].rolling(days).min()
+                data[symbol + type_of_low + '_DIV_' + symbol + f'_MIN{days}' +
+                     type_of_low] = data[symbol + type_of_low] / data[symbol + f'_MIN{days}' + type_of_low]
+
+                cols.append(symbol + f'_MIN{days}' + type_of_low)
+                cols.append(symbol + type_of_low + '_DIV_' + symbol + f'_MIN{days}' +
+                            type_of_low)
+
+    return cols
+
+
+def handle_gn_low_calcs(data, low_len, types):
+    cols = []
+    for days in low_len:
+        for type_of_low in types:
+            data[f'MIN{days}_' +
+                 type_of_low] = data[type_of_low].rolling(days).min()
+
+            data[type_of_low + '_DIV_' + f'MIN{days}_' +
+                 type_of_low] = data[type_of_low] / data[f'MIN{days}_' + type_of_low]
+
+            cols.append(f'MIN{days}_' +
+                        type_of_low)
+            cols.append(type_of_low + '_DIV_' + f'MIN{days}_' +
+                        type_of_low)
 
     return cols
